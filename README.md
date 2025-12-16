@@ -1,6 +1,7 @@
 Audio Compression with Fully Convolutional Autoencoders
 
 Overview
+
 This project trains and evaluates a neural audio compressor. Audio is converted to a complex STFT (log-magnitude + phase as two channels), compressed by a fully convolutional autoencoder, and reconstructed. The goal is to study label-free compression and balance quality (SNR / SI-SDR / LSD) against latent/blob size.
 
 Project Structure
