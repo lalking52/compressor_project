@@ -4,7 +4,7 @@ Overview
 This project trains and evaluates a neural audio compressor. Audio is converted to a complex STFT (log-magnitude + phase as two channels), compressed by a fully convolutional autoencoder, and reconstructed. The goal is to study label-free compression and balance quality (SNR / SI-SDR / LSD) against latent/blob size.
 
 Project Structure
-.
+```
 ├── src/
 │   ├── audio_io.py          # Audio loading with on-the-fly conversion if needed
 │   ├── stft_utils.py        # STFT/iSTFT helpers for magnitude/phase
@@ -20,7 +20,7 @@ Project Structure
 ├── data_test/               # Test wav/flac
 ├── results/                 # Checkpoints and recon_*.wav
 └── README.md
-
+```
 Model
 - Input: two-channel complex STFT (log-magnitude, phase).
 - Encoder: Conv2d stack with stride=2 plus a bottleneck ResBlock.
