@@ -1,98 +1,82 @@
 Audio Compression with Fully Convolutional Autoencoders
 
 Overview
-
-The project trains и evaluates нейросетевой компрессор аудио. Звук превращается в комплексный STFT (лог-магнитуда + фаза как два канала), сжимается fully-convolutional автоэнкодером и восстанавливается обратно. Цель — изучать компрессию без меток и добиваться баланса между качеством (SNR/SI-SDR/LSD) и размером латента/блоба.
-
-⸻
+This project trains and evaluates a neural audio compressor. Audio is converted to a complex STFT (log-magnitude + phase as two channels), compressed by a fully convolutional autoencoder, and reconstructed. The goal is to study label-free compression and balance quality (SNR / SI-SDR / LSD) against latent/blob size.
 
 Project Structure
-
 .
 ├── src/
-│   ├── audio_io.py          # Загрузка/сохранение аудио
-│   ├── stft_utils.py        # STFT/iSTFT, utils для магн/фазы
-│   ├── dataset.py           # PyTorch Dataset: возвращает стек [лог-маг, фаза]
-│   ├── model_fc_ae.py       # Fully-conv автоэнкодер с даун/ап-семплом и bottleneck-resblock
-│   ├── train.py             # Обучение (комплексный спекстр., мел/волновые лоссы)
-│   ├── inference.py         # compress/decompress с квантованием латента
-│   ├── eval.py              # Оценка: SNR, SI-SDR, LSD, печать компрессии и размер блоба
-│   ├── test_reconstruct.py  # Реконструкция из чекпоинта
-│   ├── size_check.py        # Проверка форм/компрессии
-│   └── numba_cache.py       # Опциональный кеш numba
-├── data/                    # Тренировочные wav/flac
-├── data_test/               # Тестовые wav/flac
-├── results/                 # Чекпоинты и recon_*.wav
+│   ├── audio_io.py          # Audio loading with on-the-fly conversion if needed
+│   ├── stft_utils.py        # STFT/iSTFT helpers for magnitude/phase
+│   ├── dataset.py           # PyTorch Dataset returning stacked [log-mag, phase]
+│   ├── model_fc_ae.py       # Fully-conv autoencoder with down/up-sampling and bottleneck resblock
+│   ├── train.py             # Training loop (complex spec, mel + waveform losses)
+│   ├── inference.py         # compress/decompress with latent quantization
+│   ├── eval.py              # Metrics: SNR, SI-SDR, LSD, compression/size reporting
+│   ├── test_reconstruct.py  # Reconstruct from a checkpoint
+│   ├── size_check.py        # Size/compression checks
+│   └── numba_cache.py       # Optional numba cache directory setup
+├── data/                    # Training wav/flac
+├── data_test/               # Test wav/flac
+├── results/                 # Checkpoints and recon_*.wav
 └── README.md
 
-⸻
-
 Model
-
-- Вход: 2 канала (лог-магнитуда, фаза) комплексного STFT.
-- Энкодер: несколько Conv2d со stride=2 (доп. даунсемпл для более компактного латента) и bottleneck-ResBlock.
-- Декодер: зеркальный ConvTranspose2d, предсказывает оба канала (магнитуда и фаза), чтобы не зависеть от сохранённой фазы.
-- Квантование: per-channel max-norm, int8/16 (по умолчанию 8 бит) без бит-пэкинга.
-
-⸻
+- Input: two-channel complex STFT (log-magnitude, phase).
+- Encoder: Conv2d stack with stride=2 plus a bottleneck ResBlock.
+- Decoder: mirrored ConvTranspose2d predicting both magnitude and phase to avoid stored phase dependency.
+- Quantization: per-channel max-norm, int8/16 (default 8 bits), no bit-packing.
 
 Training
-
-Запуск:
-
+Run:
+```
 python src/train.py
+```
+Environment knobs:
+- `MAX_TRAIN_FILES` (default 20) — limit number of training files.
+- `MAX_AUDIO_SECONDS` (default 8) — random crop for speed (<=0 disables).
+- `MODEL_CHANNELS` (default 8) — width; smaller means stronger compression.
+- `MEL_LOSS_WEIGHT` (default 0.003) — mel loss weight (lower = softer, less robotic).
+- `EPOCHS` (default 80).
 
-Основные настройки через env:
-- MAX_TRAIN_FILES (default 20) — сколько файлов брать для обучения.
-- MAX_AUDIO_SECONDS (default 8) — случайный кроп для ускорения (≤0 отключает).
-- MODEL_CHANNELS (default 8) — ширина сети; меньше = сильнее компрессия.
-- MEL_LOSS_WEIGHT (default 0.003) — вес мел-лосса (меньше = мягче, меньше “робота”).
-- EPOCHS (default 80).
-
-Лоссы: L1 по магн/фазе, L1 по waveform, мел-лосс на двух разрешениях.
-
-⸻
+Losses: L1 on magnitude/phase, L1 on waveform, mel loss at two resolutions.
 
 Inference and Evaluation
+- Reconstruction: `python src/test_reconstruct.py` (requires `results/model_last.pth`).
+- Evaluation: `python src/eval.py` saves `recon_*.wav` and prints compression (input/latent, blob size), SNR, SI-SDR, LSD.
+- Core API in `src/inference.py`: `compress`/`decompress` with `store_phase` (bool) and `quant_bits` (default 8).
 
-- Реконструкция: python src/test_reconstruct.py (нужен results/model_last.pth).
-- Оценка: python src/eval.py — сохраняет recon_*.wav, печатает
-  компрессию (input/latent, размер блоба), SNR, SI-SDR, LSD.
-- compress/decompress в `src/inference.py`: можно хранить фазу (store_phase=True) или полагаться на предсказанную фазу; quant_bits по умолчанию 8.
-
-⸻
+Dataset prep
+Use `src/prepare_split.py` to create train/test symlinks without duplicating audio:
+```
+python src/prepare_split.py --source LibriSpeech/test-clean --train-ratio 0.5 --seed 42
+```
 
 Quick smoke test
-If you just want to verify the pipeline works:
-
+Verify the pipeline end-to-end:
+```
 python src/smoke_test.py
-
-Берёт data_test/*.wav (или генерит 1s 440 Hz), гоняет два режима (почти lossless и деградированный), пишет recon/residual в results/.
-
-⸻
+```
+Takes `data_test/*.wav` (or generates a 1s 440 Hz tone), runs two settings (near-lossless vs degraded), and writes recon/residual to `results/`.
 
 Future directions
-
-- Уйти в time-domain энкодер/декодер (Conv/TasNet-style) для лучшей перцепции при том же объёме.
-- Полностью learned phase/complex decoding: улучшить фазовое моделирование без хранения фазы.
-- Перцептивные метрики: добавить PESQ/STOI (для речи), multi-band LSD/SDR, MOS-proxy.
-- Variational/VQ латент: дискретный кодбук или KL-регуляризация для более управляемой компрессии.
-- Multi-resolution/learned filterbanks вместо фиксированной STFT.
-
-⸻
+- Time-domain encoder/decoder (Conv/TasNet-style) for better perceptual quality at similar bitrate.
+- Fully learned phase/complex decoding to reduce reliance on stored phase.
+- Perceptual metrics: PESQ/STOI (speech), multi-band LSD/SDR, MOS proxies.
+- Variational/VQ latent (codebook or KL) for more controllable compression.
+- Multi-resolution or learned filterbanks instead of fixed STFT.
 
 Requirements
-	•	Python 3.8+
-	•	PyTorch
-	•	NumPy
-	•	SciPy
-	•	librosa (optional)
-	•	numba (optional)
+- Python 3.8+
+- PyTorch
+- NumPy
+- SciPy
+- librosa (optional)
+- numba (optional)
 
+```
 pip install torch numpy scipy librosa numba
-
-⸻
+```
 
 License
-
 Intended for research and educational use.
